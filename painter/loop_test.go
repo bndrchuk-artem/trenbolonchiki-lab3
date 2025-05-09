@@ -61,60 +61,91 @@ func (mockOperation *Mock) Do(t screen.Texture) bool {
 	return args.Bool(0)
 }
 
-func TestLoop_Post(t *testing.T) {
-	var (
-		l  Loop
-		tr testReceiver
-	)
-	l.Receiver = &tr
+func TestLoop_Post_Success(t *testing.T) {
+	textureMock := new(Mock)
+	receiverMock := new(Mock)
+	screenMock := new(Mock)
 
-	var testOps []string
-
-	l.Start(mockScreen{})
-	l.Post(logOp(t, "do white fill", WhiteFill))
-	l.Post(logOp(t, "do green fill", GreenFill))
-	l.Post(UpdateOp)
-
-	for i := 0; i < 3; i++ {
-		go l.Post(logOp(t, "do green fill", GreenFill))
+	texture := image.Pt(800, 800)
+	screenMock.On("NewTexture", texture).Return(textureMock, nil)
+	receiverMock.On("Update", textureMock).Return()
+	loop := Loop{
+		Receiver: receiverMock,
 	}
 
-	l.Post(OperationFunc(func(screen.Texture) {
-		testOps = append(testOps, "op 1")
-		l.Post(OperationFunc(func(screen.Texture) {
-			testOps = append(testOps, "op 2")
-		}))
-	}))
-	l.Post(OperationFunc(func(screen.Texture) {
-		testOps = append(testOps, "op 3")
-	}))
+	loop.Start(screenMock)
 
-	l.StopAndWait()
+	operationOne := new(Mock)
+	textureMock.On("Bounds").Return(image.Rectangle{})
+	operationOne.On("Do", textureMock).Return(true)
 
-	if tr.lastTexture == nil {
-		t.Fatal("Texture was not updated")
-	}
-	mt, ok := tr.lastTexture.(*mockTexture)
-	if !ok {
-		t.Fatal("Unexpected texture", tr.lastTexture)
-	}
-	if mt.Colors[0] != color.White {
-		t.Error("First color is not white:", mt.Colors)
-	}
-	if len(mt.Colors) != 2 {
-		t.Error("Unexpected size of colors:", mt.Colors)
-	}
+	assert.Empty(t, loop.MsgQueue.Queue)
+	loop.Post(operationOne)
+	time.Sleep(1 * time.Second)
+	assert.Empty(t, loop.MsgQueue.Queue)
 
-	if !reflect.DeepEqual(testOps, []string{"op 1", "op 2", "op 3"}) {
-		t.Error("Bad order:", testOps)
-	}
+	operationOne.AssertCalled(t, "Do", textureMock)
+	receiverMock.AssertCalled(t, "Update", textureMock)
+	screenMock.AssertCalled(t, "NewTexture", image.Pt(800, 800))
 }
 
-func logOp(t *testing.T, msg string, op OperationFunc) OperationFunc {
-	return func(tx screen.Texture) {
-		t.Log(msg)
-		op(tx)
+func TestLoop_Post_Failure(t *testing.T) {
+	textureMock := new(Mock)
+	receiverMock := new(Mock)
+	screenMock := new(Mock)
+
+	texture := image.Pt(800, 800)
+	screenMock.On("NewTexture", texture).Return(textureMock, nil)
+	receiverMock.On("Update", textureMock).Return()
+	loop := Loop{
+		Receiver: receiverMock,
 	}
+
+	loop.Start(screenMock)
+
+	operationOne := new(Mock)
+	textureMock.On("Bounds").Return(image.Rectangle{})
+	operationOne.On("Do", textureMock).Return(false)
+
+	assert.Empty(t, loop.MsgQueue.Queue)
+	loop.Post(operationOne)
+	time.Sleep(1 * time.Second)
+	assert.Empty(t, loop.MsgQueue.Queue)
+
+	operationOne.AssertCalled(t, "Do", textureMock)
+	receiverMock.AssertNotCalled(t, "Update", textureMock)
+	screenMock.AssertCalled(t, "NewTexture", image.Pt(800, 800))
 }
 
+func TestLoop_Post_Multiple_Success(t *testing.T) {
+	textureMock := new(Mock)
+	receiverMock := new(Mock)
+	screenMock := new(Mock)
+
+	texture := image.Pt(800, 800)
+	screenMock.On("NewTexture", texture).Return(textureMock, nil)
+	receiverMock.On("Update", textureMock).Return()
+	loop := Loop{
+		Receiver: receiverMock,
+	}
+
+	loop.Start(screenMock)
+
+	operationOne := new(Mock)
+	operationTwo := new(Mock)
+	textureMock.On("Bounds").Return(image.Rectangle{})
+	operationOne.On("Do", textureMock).Return(true)
+	operationTwo.On("Do", textureMock).Return(true)
+
+	assert.Empty(t, loop.MsgQueue.Queue)
+	loop.Post(operationOne)
+	loop.Post(operationTwo)
+	time.Sleep(1 * time.Second)
+	assert.Empty(t, loop.MsgQueue.Queue)
+
+	operationOne.AssertCalled(t, "Do", textureMock)
+	operationTwo.AssertCalled(t, "Do", textureMock)
+	receiverMock.AssertCalled(t, "Update", textureMock)
+	screenMock.AssertCalled(t, "NewTexture", image.Pt(800, 800))
+}
 
