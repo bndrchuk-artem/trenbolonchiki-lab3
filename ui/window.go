@@ -4,9 +4,9 @@ import (
 	"image"
 	"image/color"
 	"log"
+	"sync"
 
 	"golang.org/x/exp/shiny/driver"
-	"golang.org/x/exp/shiny/imageutil"
 	"golang.org/x/exp/shiny/screen"
 	"golang.org/x/image/draw"
 	"golang.org/x/mobile/event/key"
@@ -15,6 +15,8 @@ import (
 	"golang.org/x/mobile/event/paint"
 	"golang.org/x/mobile/event/size"
 )
+
+var DefaultWindowSize = image.Pt(800, 800)
 
 type Visualizer struct {
 	Title         string
@@ -25,25 +27,39 @@ type Visualizer struct {
 	tx   chan screen.Texture
 	done chan struct{}
 
-	sz  size.Event
-	pos image.Rectangle
+	sz       size.Event
+	pos      image.Rectangle
+	mousePos image.Point
+
+	mu sync.Mutex
 }
 
+// Main starts the main application window and event loop
 func (pw *Visualizer) Main() {
-	pw.tx = make(chan screen.Texture)
+	pw.tx = make(chan screen.Texture, 1) // Buffer to prevent blocking
 	pw.done = make(chan struct{})
 	pw.pos.Max.X = 200
 	pw.pos.Max.Y = 200
 	driver.Main(pw.run)
 }
 
+// Update receives a new texture to display
 func (pw *Visualizer) Update(t screen.Texture) {
-	pw.tx <- t
+	select {
+	case pw.tx <- t:
+	default:
+		if pw.w != nil {
+			pw.w.Send(paint.Event{})
+		}
+		pw.tx <- t
+	}
 }
 
 func (pw *Visualizer) run(s screen.Screen) {
 	w, err := s.NewWindow(&screen.NewWindowOptions{
-		Title: pw.Title,
+		Title:  pw.Title,
+		Width:  DefaultWindowSize.X,
+		Height: DefaultWindowSize.Y,
 	})
 	if err != nil {
 		log.Fatal("Failed to initialize the app window:", err)
@@ -53,22 +69,23 @@ func (pw *Visualizer) run(s screen.Screen) {
 		close(pw.done)
 	}()
 
+	pw.w = w
+
 	if pw.OnScreenReady != nil {
 		pw.OnScreenReady(s)
 	}
 
-	pw.w = w
-
-	events := make(chan any)
+	events := make(chan any, 100)
 	go func() {
 		for {
 			e := w.NextEvent()
 			if pw.Debug {
-				log.Printf("new event: %v", e)
+				log.Printf("Event: %T %v", e, e)
 			}
+
 			if detectTerminate(e) {
 				close(events)
-				break
+				return
 			}
 			events <- e
 		}
@@ -85,7 +102,9 @@ func (pw *Visualizer) run(s screen.Screen) {
 			pw.handleEvent(e, t)
 
 		case t = <-pw.tx:
-			w.Send(paint.Event{})
+			if pw.w != nil {
+				pw.w.Send(paint.Event{})
+			}
 		}
 	}
 }
@@ -94,49 +113,97 @@ func detectTerminate(e any) bool {
 	switch e := e.(type) {
 	case lifecycle.Event:
 		if e.To == lifecycle.StageDead {
-			return true // Window destroy initiated.
+			return true
 		}
 	case key.Event:
-		if e.Code == key.CodeEscape {
-			return true // Esc pressed.
+		if e.Code == key.CodeEscape || (e.Code == key.CodeQ && e.Modifiers == key.ModControl) {
+			return true
 		}
 	}
 	return false
 }
 
 func (pw *Visualizer) handleEvent(e any, t screen.Texture) {
-	switch e := e.(type) {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
 
-	case size.Event: // Оновлення даних про розмір вікна.
+	switch e := e.(type) {
+	case size.Event:
 		pw.sz = e
+
+		if pw.w != nil {
+			pw.w.Send(paint.Event{})
+		}
 
 	case error:
 		log.Printf("ERROR: %s", e)
 
 	case mouse.Event:
-		if t == nil {
-			// TODO: Реалізувати реакцію на натискання кнопки миші.
+		switch e.Direction {
+		case mouse.DirPress:
+			if e.Button == mouse.ButtonRight {
+				pw.mousePos = image.Point{X: int(e.X), Y: int(e.Y)}
+				if pw.w != nil {
+					pw.w.Send(paint.Event{})
+				}
+			}
 		}
 
 	case paint.Event:
-		// Малювання контенту вікна.
+		if pw.w == nil {
+			return
+		}
+
 		if t == nil {
 			pw.drawDefaultUI()
 		} else {
-			// Використання текстури отриманої через виклик Update.
 			pw.w.Scale(pw.sz.Bounds(), t, t.Bounds(), draw.Src, nil)
 		}
 		pw.w.Publish()
 	}
 }
 
+// drawDefaultUI draws the default UI when no texture is available
 func (pw *Visualizer) drawDefaultUI() {
-	pw.w.Fill(pw.sz.Bounds(), color.Black, draw.Src) // Фон.
-
-	// TODO: Змінити колір фону та додати відображення фігури у вашому варіанті.
-
-	// Малювання білої рамки.
-	for _, br := range imageutil.Border(pw.sz.Bounds(), 10) {
-		pw.w.Fill(br, color.White, draw.Src)
+	if pw.w == nil {
+		return
 	}
+
+	// Fill background
+	pw.w.Fill(pw.sz.Bounds(), color.White, draw.Src)
+
+	// Determine center position
+	var centerX, centerY int
+	if pw.mousePos == (image.Point{}) {
+		centerX, centerY = pw.sz.WidthPx/2, pw.sz.HeightPx/2
+	} else {
+		centerX, centerY = pw.mousePos.X, pw.mousePos.Y
+	}
+
+	// Size parameters
+	horizontalBarWidth := 400
+	horizontalBarHeight := 100
+	verticalBarWidth := horizontalBarWidth / 4
+
+	// Color
+	blue := color.RGBA{R: 0, G: 0, B: 255, A: 255}
+
+	// Draw T-shape figure
+	horizontalBar := image.Rect(
+		centerX-horizontalBarWidth/2,
+		centerY,
+		centerX+horizontalBarWidth/2,
+		centerY+horizontalBarHeight,
+	)
+
+	verticalBar := image.Rect(
+		centerX-verticalBarWidth/2,
+		centerY-200,
+		centerX+verticalBarWidth/2,
+		centerY,
+	)
+
+	// Draw the parts
+	pw.w.Fill(verticalBar, blue, draw.Src)
+	pw.w.Fill(horizontalBar, blue, draw.Src)
 }
