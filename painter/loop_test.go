@@ -1,14 +1,65 @@
 package painter
 
+
 import (
 	"image"
 	"image/color"
 	"image/draw"
-	"reflect"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"golang.org/x/exp/shiny/screen"
 )
+
+type Mock struct {
+	mock.Mock
+}
+
+func (_ *Mock) NewBuffer(size image.Point) (screen.Buffer, error) {
+	return nil, nil
+}
+
+func (_ *Mock) NewWindow(opts *screen.NewWindowOptions) (screen.Window, error) {
+	return nil, nil
+}
+
+func (mockReceiver *Mock) Update(texture screen.Texture) {
+	mockReceiver.Called(texture)
+}
+
+func (mockScreen *Mock) NewTexture(size image.Point) (screen.Texture, error) {
+	args := mockScreen.Called(size)
+	return args.Get(0).(screen.Texture), args.Error(1)
+}
+
+func (mockTexture *Mock) Release() {
+	mockTexture.Called()
+}
+
+func (mockTexture *Mock) Upload(dp image.Point, src screen.Buffer, sr image.Rectangle) {
+	mockTexture.Called(dp, src, sr)
+}
+
+func (mockTexture *Mock) Bounds() image.Rectangle {
+	args := mockTexture.Called()
+	return args.Get(0).(image.Rectangle)
+}
+
+func (mockTexture *Mock) Fill(dr image.Rectangle, src color.Color, op draw.Op) {
+	mockTexture.Called(dr, src, op)
+}
+
+func (mockTexture *Mock) Size() image.Point {
+	args := mockTexture.Called()
+	return args.Get(0).(image.Point)
+}
+
+func (mockOperation *Mock) Do(t screen.Texture) bool {
+	args := mockOperation.Called(t)
+	return args.Bool(0)
+}
 
 func TestLoop_Post(t *testing.T) {
 	var (
@@ -66,41 +117,4 @@ func logOp(t *testing.T, msg string, op OperationFunc) OperationFunc {
 	}
 }
 
-type testReceiver struct {
-	lastTexture screen.Texture
-}
 
-func (tr *testReceiver) Update(t screen.Texture) {
-	tr.lastTexture = t
-}
-
-type mockScreen struct{}
-
-func (m mockScreen) NewBuffer(size image.Point) (screen.Buffer, error) {
-	panic("implement me")
-}
-
-func (m mockScreen) NewTexture(size image.Point) (screen.Texture, error) {
-	return new(mockTexture), nil
-}
-
-func (m mockScreen) NewWindow(opts *screen.NewWindowOptions) (screen.Window, error) {
-	panic("implement me")
-}
-
-type mockTexture struct {
-	Colors []color.Color
-}
-
-func (m *mockTexture) Release() {}
-
-func (m *mockTexture) Size() image.Point { return size }
-
-func (m *mockTexture) Bounds() image.Rectangle {
-	return image.Rectangle{Max: m.Size()}
-}
-
-func (m *mockTexture) Upload(dp image.Point, src screen.Buffer, sr image.Rectangle) {}
-func (m *mockTexture) Fill(dr image.Rectangle, src color.Color, op draw.Op) {
-	m.Colors = append(m.Colors, src)
-}
