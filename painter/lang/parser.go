@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bndrchuk-artem/trenbolonchiki-lab3/painter"
+	"github.com/roman-mazur/architecture-lab-3/painter"
 )
 
 // Parser handles parsing of drawing commands from text input

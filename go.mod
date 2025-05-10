@@ -3,7 +3,6 @@ module github.com/roman-mazur/architecture-lab-3
 go 1.24
 
 require (
-	github.com/roman-mazur/architecture-lab-3 v0.0.0-20240415212443-330fa4ebbaff
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/exp/shiny v0.0.0-20230321023759-10a507213a29
 	golang.org/x/image v0.7.0

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bndrchuk-artem/trenbolonchiki-lab3/painter"
+	"github.com/roman-mazur/architecture-lab-3/painter"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
