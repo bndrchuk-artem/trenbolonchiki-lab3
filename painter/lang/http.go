@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/bndrchuk-artem/trenbolonchiki-lab3/painter"
+	"github.com/roman-mazur/architecture-lab-3/painter"
 )
 
 // HttpHandler конструює обробник HTTP запитів, який дані з запиту віддає у Parser, а потім відправляє отриманий список
